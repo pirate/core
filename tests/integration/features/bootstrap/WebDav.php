@@ -1,10 +1,11 @@
 <?php
 
 use GuzzleHttp\Client as GClient;
-use GuzzleHttp\Message\ResponseInterface;
 use Sabre\DAV\Client as SClient;
 use Sabre\DAV\Xml\Property\ResourceType;
 use GuzzleHttp\Exception\ServerException;
+use Psr\Http\Message\ResponseInterface;
+use GuzzleHttp\Psr7\Request;
 use TestHelpers\WebDavHelper;
 
 require __DIR__ . '/../../../../lib/composer/autoload.php';
@@ -162,10 +163,9 @@ trait WebDav {
 		$options = [];
 		$options['auth'] = [$token, ""];
 
-		$request = $client->createRequest("GET", $fullUrl, $options);
-		$request->addHeader('Range', $range);
+		$request = new Request("GET", $fullUrl, ['Range' => $range]);
 
-		$this->response = $client->send($request);
+		$this->response = $client->send($request, $options);
 	}
 
 	/**
@@ -180,10 +180,9 @@ trait WebDav {
 		$options = [];
 		$options['auth'] = [$token, ""];
 
-		$request = $client->createRequest("GET", $fullUrl, $options);
-		$request->addHeader('Range', $range);
+		$request = new Request("GET", $fullUrl, ['Range' => $range]);
 
-		$this->response = $client->send($request);
+		$this->response = $client->send($request, $options);
 	}
 
 	/**
@@ -240,7 +239,20 @@ trait WebDav {
 			$headerName = $header[0];
 			$expectedHeaderValue = $header[1];
 			$returnedHeader = $this->response->getHeader($headerName);
-			if ($returnedHeader !== $expectedHeaderValue) {
+			if (is_array($returnedHeader)) {
+				if (empty($returnedHeader)) {
+					throw new \Exception(
+						sprintf(
+							"Missing expected header '%s'",
+							$headerName
+						)
+					);
+				}
+				$headerValue = $returnedHeader[0];
+			} else {
+				$headerValue = $returnedHeader;
+			}
+			if ($headerValue !== $expectedHeaderValue) {
 				throw new \Exception(
 					sprintf(
 						"Expected value '%s' for header '%s', got '%s'",
@@ -495,7 +507,7 @@ trait WebDav {
 		$body .= '
 					</oc:filter-files>';
 
-		$response = $client->request('REPORT', $this->makeSabrePath($user, $path), $body);
+		$response = $client->request('REPORT', $this->makeSabrePath($user, $path), $body, []);
 		$parsedResponse = $client->parseMultistatus($response['body']);
 		return $parsedResponse;
 	}
@@ -515,7 +527,7 @@ trait WebDav {
 							 </oc:filter-comments>';
 
 
-		$response = $client->request('REPORT', $this->makeSabrePathNotForFiles($path), $body);
+		$response = $client->request('REPORT', $this->makeSabrePathNotForFiles($path), $body, []);
 
 		$parsedResponse = $client->parseMultistatus($response['body']);
 		return $parsedResponse;
@@ -561,8 +573,9 @@ trait WebDav {
 	 * @param string $source
 	 * @param string $destination
 	 */
-	public function userUploadsAFileTo($user, $source, $destination) {
-		$file = \GuzzleHttp\Stream\Stream::factory(fopen($source, 'r'));
+	public function userUploadsAFileTo($user, $source, $destination)
+	{
+		$file = fopen($source, 'r');
 		try {
 			$this->response = $this->makeDavRequest($user, "PUT", $destination, [], $file);
 		} catch (\GuzzleHttp\Exception\BadResponseException $e) {
@@ -730,9 +743,8 @@ trait WebDav {
 	 */
 	public function userUploadsAFileWithContentTo($user, $content, $destination)
 	{
-		$file = \GuzzleHttp\Stream\Stream::factory($content);
 		try {
-			$this->response = $this->makeDavRequest($user, "PUT", $destination, [], $file);
+			$this->response = $this->makeDavRequest($user, "PUT", $destination, [], $content);
 		} catch (\GuzzleHttp\Exception\ServerException $e) {
 			// 4xx and 5xx responses cause an exception
 			$this->response = $e->getResponse();
@@ -749,14 +761,13 @@ trait WebDav {
 	 */
 	public function userUploadsAFileWithChecksumAndContentTo($user, $checksum, $content, $destination)
 	{
-		$file = \GuzzleHttp\Stream\Stream::factory($content);
 		try {
 			$this->response = $this->makeDavRequest(
 				$user,
 				"PUT",
 				$destination,
 				['OC-Checksum' => $checksum],
-				$file
+				$content
 			);
 		} catch (\GuzzleHttp\Exception\BadResponseException $e) {
 			// 4xx and 5xx responses cause an exception
@@ -823,7 +834,6 @@ trait WebDav {
 	{
 		try {
 			$num -= 1;
-			$data = \GuzzleHttp\Stream\Stream::factory($data);
 			$file = $destination . '-chunking-42-' . $total . '-' . $num;
 			$this->makeDavRequest($user, 'PUT', $file, ['OC-Chunked' => '1'], $data,  "uploads");
 		} catch (\GuzzleHttp\Exception\RequestException $ex) {

@@ -2,6 +2,7 @@
 
 use GuzzleHttp\Client;
 use GuzzleHttp\Exception\ClientException;
+use GuzzleHttp\Psr7\Request;
 use TestHelpers\SharingHelper;
 
 require __DIR__ . '/../../../../lib/composer/autoload.php';
@@ -39,22 +40,23 @@ trait Sharing {
 			$options['auth'] = [$user, $this->regularUser];
 		}
 
+		$fd = '';
 		if ($body instanceof \Behat\Gherkin\Node\TableNode) {
 			$fd = $body->getRowsHash();
 			if (array_key_exists('expireDate', $fd)) {
 				$dateModification = $fd['expireDate'];
 				$fd['expireDate'] = date('Y-m-d', strtotime($dateModification));
 			}
-			$options['body'] = $fd;
+			$options['form_params'] = $fd;
 		}
 
 		try {
-			$this->response = $client->send($client->createRequest("POST", $fullUrl, $options));
+			$this->response = $client->send(new Request("POST", $fullUrl), $options);
 		} catch (\GuzzleHttp\Exception\ClientException $ex) {
 			$this->response = $ex->getResponse();
 		}
 
-		$this->lastShareData = $this->response->xml();
+		$this->lastShareData = $this->getResponseXml();
 	}
 
 	/**
@@ -77,10 +79,10 @@ trait Sharing {
 		$options = [];
 		$options['auth'] = [$token, ""];
 
-		$request = $client->createRequest('GET', $fullUrl, $options);
+		$request = new Request('GET', $fullUrl);
 
 		try {
-			$this->response = $client->send($request);
+			$this->response = $client->send($request, $options);
 			PHPUnit_Framework_Assert::fail('download must fail');
 		} catch (ClientException $e) {
 			// expected
@@ -184,14 +186,14 @@ trait Sharing {
 		$token = $this->getLastShareToken();
 		$options['auth'] = [$token, $password];
 		$options['stream'] = true;
-		$options['body'] = $body;
 
+		$headers = [];
 		if ($autorename) {
-			$options['headers']['OC-Autorename'] = 1;
+			$headers['OC-Autorename'] = 1;
 		}
 
 		$client = new Client();
-		$this->response = $client->send($client->createRequest('PUT', $url, $options));
+		$this->response = $client->send(new Request('PUT', $url, $headers, $body), $options);
 		PHPUnit_Framework_Assert::assertEquals(201, $this->response->getStatusCode());
 	}
 
@@ -209,8 +211,8 @@ trait Sharing {
 			$options['auth'] = [$this->currentUser, $this->regularUser];
 		}
 		$date = date('Y-m-d', strtotime("+3 days"));
-		$options['body'] = ['expireDate' => $date];
-		$this->response = $client->send($client->createRequest("PUT", $fullUrl, $options));
+		$body = ['expireDate' => $date];
+		$this->response = $client->send(new Request("PUT", $fullUrl, [], $body), $options);
 		PHPUnit_Framework_Assert::assertEquals(200, $this->response->getStatusCode());
 	}
 
@@ -229,17 +231,18 @@ trait Sharing {
 			$options['auth'] = [$this->currentUser, $this->regularUser];
 		}
 
+		$fd = '';
 		if ($body instanceof \Behat\Gherkin\Node\TableNode) {
 			$fd = $body->getRowsHash();
 			if (array_key_exists('expireDate', $fd)) {
 				$dateModification = $fd['expireDate'];
 				$fd['expireDate'] = date('Y-m-d', strtotime($dateModification));
 			}
-			$options['body'] = $fd;
+			$options['form_params'] = $fd;
 		}
 
 		try {
-			$this->response = $client->send($client->createRequest("PUT", $fullUrl, $options));
+			$this->response = $client->send(new Request("PUT", $fullUrl), $options);
 		} catch (\GuzzleHttp\Exception\ClientException $ex) {
 			$this->response = $ex->getResponse();
 		}
@@ -270,14 +273,14 @@ trait Sharing {
 				$linkName,
 				$this->apiVersion,
 				$this->sharingApiVersion);
-			$this->lastShareData = $this->response->xml();
+			$this->lastShareData = $this->getResponseXml();
 		} catch (\GuzzleHttp\Exception\ClientException $ex) {
 			$this->response = $ex->getResponse();
 		}
 	}
 
 	public function isFieldInResponse($field, $contentExpected) {
-		$data = $this->response->xml()->data[0];
+		$data = $this->getResponseXml()->data[0];
 		if ((string)$field == 'expiration') {
 			$contentExpected = date('Y-m-d', strtotime($contentExpected)) . " 00:00:00";
 		}
@@ -370,7 +373,7 @@ trait Sharing {
 	}
 
 	public function isUserOrGroupInSharedData($userOrGroup, $permissions = null) {
-		$data = $this->response->xml()->data[0];
+		$data = $this->getResponseXml()->data[0];
 		foreach ($data as $element) {
 			if ($element->share_with == $userOrGroup && ($permissions === null || $permissions == $element->permissions)) {
 				return True;
@@ -481,7 +484,7 @@ trait Sharing {
 	 * @Then /^the response contains ([0-9]+) entries$/
 	 */
 	public function checkingTheResponseEntriesCount($count) {
-		$actualCount = count($this->response->xml()->data[0]);
+		$actualCount = count($this->responseXml()->data[0]);
 		PHPUnit_Framework_Assert::assertEquals($count, $actualCount);
 	}
 
@@ -585,8 +588,8 @@ trait Sharing {
 			$options['auth'] = [$user, $this->regularUser];
 		}
 
-		$this->response = $client->send($client->createRequest("GET", $fullUrl, $options));
-		return $this->response->xml()->data->element;
+		$this->response = $client->send(new Request("GET", $fullUrl), $options);
+		return $this->getResponseXml()->data->element;
 	}
 
 	/**
